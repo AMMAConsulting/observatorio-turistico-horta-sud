@@ -588,7 +588,7 @@
       if (esTodo()) {
         var rh = ranking(CODS.map(function (c) { return NOM[c]; }), CODS.map(plazasHot));
         cards.push({
-          titulo: 'Plazas hoteleras por municipio', sub: 'Establecimientos en alta',
+          titulo: 'Plazas hoteleras por municipio', sub: 'Número de plazas (no de establecimientos)',
           chips: [DIARIO], fuente: F_HOT, alto: 'tall',
           nota: 'Los municipios que no aparecen no tienen ningún establecimiento hotelero en alta.',
           spec: { type: 'barh', x: rh.x, xLabel: 'Municipio', yFormat: 'num', series: [{ name: 'Plazas', data: rh.v }] }

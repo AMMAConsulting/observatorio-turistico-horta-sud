@@ -17,9 +17,10 @@ publican de verdad a escala municipal, y el contexto provincial de lo que no:
   GVA  - Registro de Turismo de la Comunitat Valenciana (dadesobertes.gva.es):
          hoteles, viviendas de uso turistico, agencias, turismo activo, etc.
   SEPE - Paro registrado (por sector, sexo y edad) y contratos por municipios.
-  GVA  - Afiliaciones a la Seguridad Social por municipio y seccion de
-         actividad, trimestral (Portal Estadistic, bdo.gva.es): la Hosteleria
-         es el empleo turistico que baja a municipio.
+  SS   - Afiliados a la Seguridad Social el ultimo dia de cada mes por
+         municipio y division CNAE (seg-social.es, desde 2023): la Hosteleria
+         es el empleo turistico que baja a municipio. Mensual, con cache en
+         pipeline/cache/afil_ss para no bajar 25 MB por mes cada dia.
 
 Reglas del kit: solo GET; un fallo de una fuente no tumba el panel; nunca se
 publica un data.js peor que el vigente (umbral del 90 %).
@@ -34,7 +35,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from sources import sepe                                              # noqa: E402
+from sources import sepe, ss                                          # noqa: E402
 from sources.comun import get_json, escribir_js, paso, ok, aviso, num  # noqa: E402
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -438,67 +439,13 @@ def contratos():
     })
 
 
-# ---------------------------------------------- GVA - afiliacion por sector
+# ------------------------------------- Seguridad Social - afiliacion mensual
 
-AFIL_URL = ("https://bdo.gva.es/bdo/res_optimo_static.php?cons=V0012_C1D0009"
-            "&idioma=cas&form=csvcoma&nperiodo=20")
+CACHE_AFIL = os.path.join(RAIZ, "pipeline", "cache", "afil_ss")
 
 
-def afiliacion():
-    """Afiliaciones a la Seguridad Social por municipio y seccion de actividad
-    (CNAE), trimestral, ultimos 5 años. Portal Estadistic de la GVA. La seccion
-    I es la Hosteleria: el empleo turistico mas directo que baja a municipio."""
-    import csv
-    import io
-    from sources.comun import get
-    raw = get(AFIL_URL)
-    try:
-        txt = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        txt = raw.decode("cp1252", errors="replace")
-    filas = list(csv.reader(io.StringIO(txt)))
-    ordinal = {"1": "1", "2": "2", "3": "3", "4": "4"}
-
-    def trim(s):
-        m = re.match(r"(\d{4})\s*-\s*(\d)", s.strip())
-        return f"{m.group(1)}T{ordinal[m.group(2)]}" if m else None
-
-    secs, datos = [], {}           # datos[(ambito, seccion)][trimestre] = valor
-    for f in filas[1:]:
-        if len(f) < 4:
-            continue
-        t = trim(f[0])
-        if not t:
-            continue
-        amb = f[1].strip()
-        cod = amb[:5] if amb[:5].isdigit() else ("prov" if amb == "Provincia de Valencia" else None)
-        if cod is None or (cod != "prov" and cod not in CODS):
-            continue
-        sec = f[2].strip()
-        if sec != "Total" and sec not in secs:
-            secs.append(sec)
-        v = num(f[3])           # '-' = sin afiliados o secreto estadistico
-        datos.setdefault((cod, sec), {})[t] = v
-
-    xs = sorted({t for d in datos.values() for t in d}, key=lambda s: (s[:4], s[-1]))
-    secs.sort()
-    serie_de = lambda cod, sec: [datos.get((cod, sec), {}).get(t) for t in xs]   # noqa: E731
-    hos = next(s for s in secs if s.startswith("I."))
-    corto = lambda s: re.sub(r"^[A-U]\.\s*", "", s).split(";")[0].strip()        # noqa: E731
-    return {
-        "x": xs,
-        "secs": [corto(s) for s in secs],
-        "letra": [s[0] for s in secs],
-        "total": {c: serie_de(c, "Total") for c in CODS},
-        "hos": {c: serie_de(c, hos) for c in CODS},
-        # Ultimo trimestre por seccion: para el reparto sectorial de cada municipio.
-        "ult": {c: [datos.get((c, s), {}).get(xs[-1]) for s in secs] for c in CODS},
-        # Media de los cuatro ultimos trimestres por seccion (quita la estacionalidad).
-        "media4": {c: [(lambda vs: round(sum(vs) / len(vs)) if vs else None)(
-            [v for v in [datos.get((c, s), {}).get(t) for t in xs[-4:]] if v is not None]) for s in secs]
-            for c in CODS},
-        "prov": {"total": serie_de("prov", "Total"), "hos": serie_de("prov", hos)},
-    }
+def afiliacion_mensual():
+    return ss.afiliacion_mensual(CODS, PROV_VALENCIA, CACHE_AFIL)
 
 
 # ------------------------------------------------------------ Recoleccion
@@ -559,10 +506,10 @@ def recoger():
     r = intenta("contratos", "SEPE - contratos registrados", contratos, lambda r: r["x"])
     if r:
         ok(f"{len(r['x'])} meses, ultimo {r['x'][-1]}")
-    r = intenta("afil", "GVA - afiliacion a la Seguridad Social por sector",
-                afiliacion, lambda r: r["x"] and any(any(v for v in s) for s in r["hos"].values()))
+    r = intenta("afilm", "Seguridad Social - afiliados por municipio y sector (mensual)",
+                afiliacion_mensual, lambda r: r["x"] and any(any(v for v in s if v) for s in r["hos"].values()))
     if r:
-        ok(f"{len(r['x'])} trimestres, ultimo {r['x'][-1]}")
+        ok(f"{len(r['x'])} meses, ultimo {r['x'][-1]}")
 
     datos["meta"]["fallos"] = fallos
     return datos, fallos
@@ -590,12 +537,18 @@ def _vigente():
         return None
 
 
+RETIRADOS = ["afil"]     # afiliacion trimestral de la GVA, sustituida por la mensual de la SS
+
+
 def main():
     print("== Observatorio Turistico de l'Horta Sud - recoleccion ==")
     datos, fallos = recoger()
     previo = _vigente()
 
     # Una fuente caida no borra lo que ya habia: se conserva el bloque anterior.
+    # Bloques retirados: no se arrastran del data.js anterior.
+    for k in RETIRADOS:
+        (previo or {}).pop(k, None)
     if previo:
         for k, v in previo.items():
             if k not in datos:

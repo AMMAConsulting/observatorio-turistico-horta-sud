@@ -98,3 +98,33 @@ html.hs-print, html.hs-print * { -webkit-print-color-adjust: exact; print-color-
   #hs-metrica { width: 100%; }
   .hs-ambito .obs-select { min-width: 0; max-width: 100%; }
 }
+
+/* Empleo: selector de ámbito en cada gráfica y botón para comparar ámbitos.
+   La cabecera de la tarjeta baja de línea en pantallas estrechas. */
+#sec-empleo .obs-card-head { flex-wrap: wrap; }
+#sec-empleo .obs-card-ctrl .obs-select { max-width: 190px; }
+.hs-cmp { position: relative; flex: 0 0 auto; }
+.hs-cmp-btn {
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  background: var(--surface); color: var(--brand-ink);
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 6px 10px;
+}
+.hs-cmp-btn:hover, .hs-cmp-btn.on { background: var(--brand-soft); border-color: var(--brand); }
+.hs-cmp-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 230px; max-height: 340px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r);
+  box-shadow: var(--shadow-up); padding: 8px 10px; font-size: 13px;
+}
+.hs-cmp-tit { color: var(--ink-mut); font-size: 11.5px; font-weight: 600; margin: 2px 0 6px; }
+.hs-cmp-panel label { display: flex; gap: 8px; align-items: center; padding: 4px 2px; cursor: pointer; color: var(--ink); }
+.hs-cmp-panel input:disabled + * , .hs-cmp-panel label:has(input:disabled) { color: var(--ink-mut); cursor: default; }
+.hs-cmp-limpiar {
+  margin-top: 6px; width: 100%; font: inherit; font-size: 12px; cursor: pointer;
+  background: var(--surface-sunk); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px;
+}
+@media (max-width: 600px) {
+  #sec-empleo .obs-card-ctrl { flex: 1 1 auto; }
+  #sec-empleo .obs-card-ctrl .obs-select { max-width: none; width: 100%; }
+  .hs-cmp-panel { right: auto; left: 0; }
+}
+html.hs-print .hs-cmp { display: none !important; }

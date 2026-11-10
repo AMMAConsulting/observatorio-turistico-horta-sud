@@ -22,7 +22,7 @@
   var P = D.pob || { x: [], m: {} };
   var PA = D.paro || { x: [], m: {} };
   var CT = D.contratos || { x: [], m: {}, serv: {}, indef: {} };
-  var AF = D.afil || { x: [], secs: [], total: {}, hos: {}, ult: {}, media4: {}, prov: { total: [], hos: [] } };
+  var AF = D.afilm || { x: [], letras: [], total: {}, hos: {}, sec: {}, prov: { total: [], hos: [] } };
   var PR = D.prov || { hot: { x: [] }, apt: { x: [] } };
 
   /* Ámbito activo: 'all' (los 20 municipios) o el código INE de uno. */
@@ -135,21 +135,14 @@
   var F_VUT = { txt: 'Generalitat Valenciana · Registro de Turismo (viviendas de uso turístico)', url: 'https://dadesobertes.gva.es/es/dataset/tur-gestur-vt' };
   var F_GVA = { txt: 'Generalitat Valenciana · Registro de Turismo', url: 'https://dadesobertes.gva.es/es/dataset?q=turismo' };
   var F_PAD = { txt: 'INE · Padrón municipal', url: 'https://www.ine.es/jaxiT3/Tabla.htm?t=2903' };
-  var F_AFIL = { txt: 'Generalitat Valenciana · Portal Estadístic, afiliaciones a la Seguridad Social por sección de actividad', url: 'https://dadesobertes.gva.es/es/dataset/estadistica-de-treballadors-afiliats-a-la-ss-per-seccio-dactivitat' };
+  var F_AFIL = { txt: 'Seguridad Social · afiliados por municipio y actividad (CNAE a 2 dígitos), último día del mes', url: 'https://www.seg-social.es/wps/portal/wss/internet/EstadisticasPresupuestosEstudios/Estadisticas/EST8/EST10/EST305/c43ad8ea-fe79-4329-ac8e-e5758f3c4d7a/f83fe4aa-2dee-49c5-8317-98d105813796' };
   var F_SEPE = { txt: 'SEPE · datos abiertos por municipios', url: 'https://www.sepe.es/HomeSepe/que-es-el-sepe/estadisticas/datos-estadisticos/municipios.html' };
 
   var MENSUAL = { txt: 'Mensual', tipo: 'live' };
   var ANUAL = { txt: 'Anual' };
   var SEMESTRAL = { txt: 'Semestral', tipo: 'live' };
   var DIARIO = { txt: 'Registro vivo', tipo: 'live' };
-  var TRIMESTRAL = { txt: 'Trimestral', tipo: 'live' };
 
-  /* Afiliaciones: variación sobre el mismo trimestre del año anterior. */
-  var varTrim = function (a) {
-    if (!a || a.length < 5) return null;
-    var c = a[a.length - 1], p = a[a.length - 5];
-    return (c == null || !p) ? null : (c - p) / p * 100;
-  };
   var cociente = function (a, b) {
     return (a || []).map(function (v, i) { var d = (b || [])[i]; return v == null || !d ? null : v / d * 100; });
   };
@@ -183,9 +176,9 @@
       val: function (c) { return ult(V.viv[c] || []); }, fuente: F_VTE },
     { id: 'pct', txt: 'Viviendas turísticas sobre el total de viviendas', sub: 'Porcentaje, ' + Obs.periodo(ult(V.x), 'mes'),
       val: function (c) { return ult(V.pct[c] || []); }, fmt: function (v) { return F.pct(v, 2); }, fuente: F_VTE },
-    { id: 'afh', txt: 'Afiliaciones en hostelería', sub: 'Seguridad Social, ' + Obs.periodo(ult(AF.x), 'trim'),
+    { id: 'afh', txt: 'Afiliados en hostelería', sub: 'Seguridad Social, ' + Obs.periodo(ult(AF.x), 'mes'),
       val: function (c) { return ult(AF.hos[c] || []); }, fuente: F_AFIL },
-    { id: 'afp', txt: 'Peso de la hostelería en el empleo', sub: 'Porcentaje de las afiliaciones, ' + Obs.periodo(ult(AF.x), 'trim'),
+    { id: 'afp', txt: 'Peso de la hostelería en el empleo', sub: 'Porcentaje de las afiliaciones, ' + Obs.periodo(ult(AF.x), 'mes'),
       val: hosPct, fmt: function (v) { return F.pct(v, 1); }, fuente: F_AFIL },
     { id: 'par', txt: 'Paro registrado por cada 1.000 habitantes', sub: Obs.periodo(ult(PA.x), 'mes') + ' sobre el padrón de ' + ult(P.x),
       val: paroMil, fmt: function (v) { return F.num(v, 1); }, fuente: F_SEPE },
@@ -735,81 +728,230 @@
 
   /* ============================================================ 5. EMPLEO */
 
+  /* Cada gráfica lleva su propio selector de ámbito (comarca o municipio). Arranca
+     en el ámbito general de la cabecera y se puede cambiar sin tocar las demás. */
+  var OPC_AMBITO = [{ v: 'all', txt: "Toda l'Horta Sud" }].concat(MUN.map(function (m) { return { v: m.c, txt: m.n }; }));
+  var nombreDe = function (c) { return c === 'all' ? "l'Horta Sud" : NOM[c]; };
+  /* Las gráficas de un solo dato pueden además comparar varios ámbitos a la vez
+     (botón «Comparar»): fnComparar recibe la lista de códigos y pinta una línea
+     por cada uno. COMPARA guarda el estado de cada tarjeta mientras está pintada. */
+  var COMPARA = {}, nCard = 0, MAX_COMPARAR = 8;
+  var conSelector = function (card, fn, fnComparar) {
+    card.id = 'hs-emp-' + (++nCard);
+    if (fnComparar) {
+      var e = COMPARA[card.id] = { base: ambito, extra: [], fn: fn, comparar: fnComparar };
+      e.spec = function () {
+        var lista = [e.base].concat(e.extra.filter(function (c) { return c !== e.base; }));
+        return lista.length > 1 ? fnComparar(lista) : fn(e.base);
+      };
+      card.control = { label: 'Ámbito', opciones: OPC_AMBITO, valor: ambito, spec: function (v) { e.base = v; return e.spec(); } };
+    } else {
+      card.control = { label: 'Ámbito', opciones: OPC_AMBITO, valor: ambito, spec: fn };
+    }
+    card.spec = fn(ambito);
+    return card;
+  };
+  /* Una línea por ámbito: lo que usan las tarjetas comparables. */
+  var lineas = function (lista, datos, extra) {
+    return lista.map(function (c) { return { name: nombreDe(c), data: datos(c) }; }).concat(extra || []);
+  };
+
+  function montarComparar(host) {
+    if (!host) return;
+    Array.prototype.forEach.call(host.querySelectorAll('.obs-card[data-card]'), function (art) {
+      var id = art.getAttribute('data-card'), e = COMPARA[id];
+      if (!e || art.querySelector('.hs-cmp')) return;
+      var ctrl = art.querySelector('.obs-card-ctrl');
+      if (!ctrl) return;
+      var caja = document.createElement('div');
+      caja.className = 'hs-cmp';
+      caja.innerHTML = '<button type="button" class="hs-cmp-btn" aria-expanded="false">Comparar</button>' +
+        '<div class="hs-cmp-panel" hidden><div class="hs-cmp-tit">Añade hasta ' + MAX_COMPARAR + ' ámbitos</div>' +
+        OPC_AMBITO.map(function (o) {
+          return '<label><input type="checkbox" value="' + Obs.esc(o.v) + '"> ' + Obs.esc(o.txt) + '</label>';
+        }).join('') +
+        '<button type="button" class="hs-cmp-limpiar">Quitar comparación</button></div>';
+      ctrl.parentNode.insertBefore(caja, ctrl.nextSibling);
+      var btn = caja.querySelector('.hs-cmp-btn'), panel = caja.querySelector('.hs-cmp-panel');
+      var plot = art.querySelector('.obs-plot');
+      var redibujar = function () {
+        art.classList.remove('showing-table');
+        var wrap = art.querySelector('.obs-table-wrap');
+        if (wrap) wrap.innerHTML = '';
+        var bt = art.querySelector('.obs-card-tools button[data-act="tabla"]');
+        if (bt) bt.setAttribute('aria-pressed', 'false');
+        Obs.chart(plot, e.spec());
+        var n = e.extra.filter(function (c) { return c !== e.base; }).length;
+        btn.textContent = n ? 'Comparando ' + (n + 1) : 'Comparar';
+        btn.classList.toggle('on', n > 0);
+      };
+      var marcar = function () {
+        var cajas = panel.querySelectorAll('input');
+        var llenas = e.extra.length >= MAX_COMPARAR - 1;
+        Array.prototype.forEach.call(cajas, function (i) {
+          var esBase = i.value === e.base;
+          i.checked = esBase || e.extra.indexOf(i.value) >= 0;
+          i.disabled = esBase || (!i.checked && llenas);
+        });
+      };
+      btn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var abrir = panel.hidden;
+        document.querySelectorAll('.hs-cmp-panel').forEach(function (p) { p.hidden = true; });
+        document.querySelectorAll('.hs-cmp-btn').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+        if (abrir) { marcar(); panel.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
+      });
+      panel.addEventListener('click', function (ev) { ev.stopPropagation(); });
+      panel.addEventListener('change', function (ev) {
+        var v = ev.target.value;
+        if (ev.target.checked) { if (e.extra.indexOf(v) < 0) e.extra.push(v); }
+        else e.extra = e.extra.filter(function (c) { return c !== v; });
+        marcar();
+        redibujar();
+      });
+      panel.querySelector('.hs-cmp-limpiar').addEventListener('click', function () {
+        e.extra = [];
+        marcar();
+        redibujar();
+      });
+      /* Si cambia el ámbito base, el botón refleja cuántos quedan comparándose. */
+      var sel = ctrl.querySelector('select');
+      if (sel) sel.addEventListener('change', function () {
+        e.extra = e.extra.filter(function (c) { return c !== e.base; });
+        var n = e.extra.length;
+        btn.textContent = n ? 'Comparando ' + (n + 1) : 'Comparar';
+        btn.classList.toggle('on', n > 0);
+      });
+    });
+  }
+  document.addEventListener('click', function () {
+    document.querySelectorAll('.hs-cmp-panel').forEach(function (p) { p.hidden = true; });
+    document.querySelectorAll('.hs-cmp-btn').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+  });
+  var CORTO = { A: 'Agricultura y pesca', B: 'Industrias extractivas', C: 'Industria manufacturera', D: 'Energía', E: 'Agua y residuos',
+    F: 'Construcción', G: 'Comercio', H: 'Transporte y almacenamiento', I: 'Hostelería', J: 'Información y comunicaciones',
+    K: 'Finanzas y seguros', L: 'Inmobiliarias', M: 'Actividades profesionales', N: 'Servicios administrativos',
+    O: 'Administración pública', P: 'Educación', Q: 'Sanidad y servicios sociales', R: 'Ocio, cultura y deporte',
+    S: 'Otros servicios', T: 'Empleo doméstico', U: 'Organismos extraterritoriales' };
+  /* Media de los últimos 12 meses de cada sector: quita la estacionalidad. */
+  var sectoresDe = function (c) {
+    var vals = (AF.letras || []).map(function (l) {
+      var s = c === 'all'
+        ? sumarMun(CODS.reduce(function (o, k) { o[k] = ((AF.sec[k] || {})[l]) || []; return o; }, {}))
+        : (((AF.sec[c] || {})[l]) || []);
+      var u = s.slice(-12).filter(function (v) { return v != null; });
+      return u.length ? Math.round(u.reduce(function (a, b) { return a + b; }, 0) / u.length) : null;
+    });
+    return ranking((AF.letras || []).map(function (l) { return CORTO[l] || l; }), vals);
+  };
+
   var secEmpleo = {
     id: 'empleo', nombre: 'Empleo',
     titulo: 'El empleo, municipio a municipio',
-    desc: 'Afiliaciones a la Seguridad Social por sector de actividad (trimestrales, Generalitat Valenciana) y paro y contratos registrados ' +
-      '(mensuales, SEPE). La hostelería es el empleo turístico más directo que se publica por municipio; no recoge todo el turismo ' +
-      '(agencias, transporte, ocio), pero tampoco todo él es turístico: incluye bares y restaurantes de uso diario.',
+    desc: 'Afiliados a la Seguridad Social por sector de actividad el último día de cada mes (Seguridad Social) y paro y contratos ' +
+      'registrados (SEPE), todo mensual. La hostelería es el empleo turístico más directo que se publica por municipio; no recoge ' +
+      'todo el turismo (agencias, transporte, ocio), pero tampoco todo él es turístico: incluye bares y restaurantes de uso diario. ' +
+      'Cada gráfica tiene su propio selector para ver la comarca entera o un municipio.',
     render: function () {
+      COMPARA = {};
       var hos = serie(AF.hos), tot = serie(AF.total);
       var pct = cociente(hos, tot), pctProv = cociente(AF.prov.hos, AF.prov.total);
-      var sec = esTodo() ? sumarMun(AF.media4) : (AF.media4[ambito] || []);
-      var CORTO = { A: 'Agricultura y pesca', B: 'Industrias extractivas', C: 'Industria manufacturera', D: 'Energía', E: 'Agua y residuos',
-        F: 'Construcción', G: 'Comercio', H: 'Transporte y almacenamiento', I: 'Hostelería', J: 'Información y comunicaciones',
-        K: 'Finanzas y seguros', L: 'Inmobiliarias', M: 'Actividades profesionales', N: 'Servicios administrativos y auxiliares',
-        O: 'Administración pública', P: 'Educación', Q: 'Sanidad y servicios sociales', R: 'Ocio, cultura y deporte',
-        S: 'Otros servicios', T: 'Empleo doméstico', U: 'Organismos extraterritoriales' };
-      var rSec = ranking(AF.secs.map(function (n, i) { return CORTO[AF.letra[i]] || n; }), sec);
-      var par = serie(PA.m), con = serie(CT.m), ind = serie(CT.indef), cserv = serie(CT.serv);
-      var tmp = con.map(function (v, i) { return v == null ? null : v - (ind[i] || 0); });
+      var par = serie(PA.m), con = serie(CT.m), ind = serie(CT.indef);
       var con12 = ult12(con), ind12 = ult12(ind);
       var pob = esTodo() ? suma(CODS.map(pobUlt)) : pobUlt(ambito);
-      var aT = function (k) { return serie(PA[k] || {}); };
       var pct1 = function (v) { return F.pct(v, 1); };
+      var paroDe = function (c, k) { return serie(PA[k] || {}, c); };
+      var parServ = paroDe(ambito, 'serv');
+      var paroRel = function (c) {
+        var h = c === 'all' ? suma(CODS.map(pobUlt)) : pobUlt(c);
+        return serie(PA.m, c).map(function (v) { return v == null || !h ? null : Math.round(v / h * 10000) / 10; });
+      };
+      var mesAF = Obs.periodo(ult(AF.x), 'mes');
+      var NOTA_SECRETO = 'La Seguridad Social oculta las celdas de menos de 5 afiliados (por sector, régimen y sexo) por secreto ' +
+        'estadístico; no se suman, así que en los municipios pequeños la cifra queda algo por debajo de la real.';
 
       var cards = [
-        {
-          titulo: 'Afiliaciones en hostelería', sub: nombreAmbito() + ' · trimestral',
-          chips: [TRIMESTRAL], fuente: F_AFIL, ancho: 'full',
-          nota: 'Cuenta afiliaciones (puestos), no personas: quien tiene dos empleos cuenta dos veces. ' +
-            'Si un municipio no tiene afiliados en un sector, o el dato está protegido por secreto estadístico, la fuente no da cifra.',
-          spec: { type: 'bar', xType: 'trim', x: AF.x, yFormat: 'num', series: [{ name: 'Afiliaciones en hostelería', data: hos }] }
-        },
-        {
-          titulo: 'Peso de la hostelería en el empleo', sub: 'Porcentaje de todas las afiliaciones',
-          chips: [TRIMESTRAL], fuente: F_AFIL,
-          spec: { type: 'line', xType: 'trim', x: AF.x, yFormat: pct1, yTick: function (v) { return F.pct(v, v % 1 === 0 ? 0 : 1); },
-                  series: [{ name: nombreAmbito(), data: pct }, { name: 'Provincia de Valencia', data: pctProv }] }
-        },
-        {
-          titulo: 'Empleo por sector', sub: 'Afiliaciones, media de los cuatro últimos trimestres',
-          chips: [TRIMESTRAL], fuente: F_AFIL, alto: 'tall',
-          spec: { type: 'barh', x: rSec.x, xLabel: 'Sección de actividad', yFormat: 'num', series: [{ name: 'Afiliaciones', data: rSec.v }] }
-        },
-        {
-          titulo: 'Afiliaciones totales', sub: nombreAmbito() + ' · todos los sectores',
-          chips: [TRIMESTRAL], fuente: F_AFIL,
-          spec: { type: 'line', xType: 'trim', x: AF.x, yFormat: 'num', series: [{ name: 'Afiliaciones', data: tot }] }
-        },
-        {
-          titulo: 'Paro registrado por sector', sub: nombreAmbito() + ' · demandantes inscritos a fin de mes',
+        conSelector({
+          titulo: 'Afiliados en hostelería', sub: 'Último día de cada mes',
+          chips: [MENSUAL], fuente: F_AFIL, ancho: 'full',
+          nota: 'Cuenta afiliaciones (puestos), no personas: quien tiene dos empleos cuenta dos veces. Incluye asalariados y autónomos. ' + NOTA_SECRETO
+        }, function (c) {
+          return { type: 'bar', xType: 'mes', x: AF.x, yFormat: 'num', series: [{ name: 'Hostelería · ' + nombreDe(c), data: serie(AF.hos, c) }] };
+        }, function (lista) {
+          return { type: 'line', xType: 'mes', x: AF.x, yFormat: 'num', series: lineas(lista, function (c) { return serie(AF.hos, c); }) };
+        }),
+        conSelector({
+          titulo: 'Peso de la hostelería en el empleo', sub: 'Porcentaje de todas las afiliaciones, mes a mes',
+          chips: [MENSUAL], fuente: F_AFIL
+        }, function (c) {
+          return { type: 'line', xType: 'mes', x: AF.x, yFormat: pct1, yTick: function (v) { return F.pct(v, v % 1 === 0 ? 0 : 1); },
+                   series: [{ name: nombreDe(c), data: cociente(serie(AF.hos, c), serie(AF.total, c)) },
+                            { name: 'Provincia de Valencia', data: pctProv }] };
+        }, function (lista) {
+          return { type: 'line', xType: 'mes', x: AF.x, yFormat: pct1, yTick: function (v) { return F.pct(v, v % 1 === 0 ? 0 : 1); },
+                   series: lineas(lista, function (c) { return cociente(serie(AF.hos, c), serie(AF.total, c)); },
+                                  [{ name: 'Provincia de Valencia', data: pctProv }]) };
+        }),
+        conSelector({
+          titulo: 'Empleo por sector', sub: 'Afiliados, media de los últimos 12 meses',
+          chips: [MENSUAL], fuente: F_AFIL, alto: 'tall',
+          nota: 'Desde enero de 2026 la Seguridad Social clasifica con la CNAE-2025; se agrupa por división para que la serie siga siendo comparable.'
+        }, function (c) {
+          var r = sectoresDe(c);
+          return { type: 'barh', x: r.x, xLabel: 'Sección de actividad', yFormat: 'num', series: [{ name: 'Afiliados · ' + nombreDe(c), data: r.v }] };
+        }),
+        conSelector({
+          titulo: 'Afiliados en todos los sectores', sub: 'Último día de cada mes',
+          chips: [MENSUAL], fuente: F_AFIL
+        }, function (c) {
+          return { type: 'line', xType: 'mes', x: AF.x, yFormat: 'num', series: [{ name: 'Afiliados · ' + nombreDe(c), data: serie(AF.total, c) }] };
+        }, function (lista) {
+          return { type: 'line', xType: 'mes', x: AF.x, yFormat: 'num', series: lineas(lista, function (c) { return serie(AF.total, c); }) };
+        }),
+        conSelector({
+          titulo: 'Paro registrado por sector', sub: 'Demandantes inscritos a fin de mes',
           chips: [MENSUAL], fuente: F_SEPE, ancho: 'full',
           nota: 'El paro registrado cuenta demandantes inscritos en las oficinas de empleo: no es la tasa de paro de la EPA. ' +
-            'El SEPE no separa la hostelería dentro de los servicios.',
-          spec: { type: 'stack', xType: 'mes', x: PA.x, yFormat: 'num',
-                  series: [{ name: 'Servicios', data: aT('serv') }, { name: 'Industria', data: aT('ind') },
-                           { name: 'Construcción', data: aT('cons') }, { name: 'Agricultura', data: aT('agri') },
-                           { name: 'Sin empleo anterior', data: aT('sin') }] }
-        },
-        {
-          titulo: 'Quién está en paro', sub: 'Demandantes inscritos a fin de mes',
+            'El SEPE no separa la hostelería dentro de los servicios.'
+        }, function (c) {
+          return { type: 'stack', xType: 'mes', x: PA.x, yFormat: 'num',
+                   series: [{ name: 'Servicios', data: paroDe(c, 'serv') }, { name: 'Industria', data: paroDe(c, 'ind') },
+                            { name: 'Construcción', data: paroDe(c, 'cons') }, { name: 'Agricultura', data: paroDe(c, 'agri') },
+                            { name: 'Sin empleo anterior', data: paroDe(c, 'sin') }] };
+        }),
+        conSelector({
+          titulo: 'Paro registrado por cada 1.000 habitantes, mes a mes', sub: 'Demandantes inscritos a fin de mes sobre el padrón de ' + ult(P.x),
           chips: [MENSUAL], fuente: F_SEPE,
-          spec: { type: 'line', xType: 'mes', x: PA.x, yFormat: 'num',
-                  series: [{ name: 'Mujeres', data: aT('muj') }, { name: '45 años o más', data: aT('may45') }, { name: 'Menores de 25 años', data: aT('jov') }] }
-        },
-        {
+          nota: 'Relativo a la población para poder comparar municipios de distinto tamaño. Se usa el último padrón para todos los meses.'
+        }, function (c) {
+          return { type: 'line', xType: 'mes', x: PA.x, yFormat: function (v) { return F.num(v, 1); }, series: [{ name: nombreDe(c), data: paroRel(c) }] };
+        }, function (lista) {
+          return { type: 'line', xType: 'mes', x: PA.x, yFormat: function (v) { return F.num(v, 1); }, series: lineas(lista, paroRel) };
+        }),
+        conSelector({
+          titulo: 'Quién está en paro', sub: 'Demandantes inscritos a fin de mes',
+          chips: [MENSUAL], fuente: F_SEPE
+        }, function (c) {
+          return { type: 'line', xType: 'mes', x: PA.x, yFormat: 'num',
+                   series: [{ name: 'Mujeres', data: paroDe(c, 'muj') }, { name: '45 años o más', data: paroDe(c, 'may45') },
+                            { name: 'Menores de 25 años', data: paroDe(c, 'jov') }] };
+        }),
+        conSelector({
           titulo: 'Contratos registrados', sub: 'Según duración · contratos firmados en el mes',
           chips: [MENSUAL], fuente: F_SEPE,
-          nota: 'Indefinidos incluye las conversiones de temporal a indefinido. Cuenta contratos, no personas.',
-          spec: { type: 'stack', xType: 'mes', x: CT.x, yFormat: 'num',
-                  series: [{ name: 'Indefinidos', data: ind }, { name: 'Temporales', data: tmp }] }
-        },
-        {
+          nota: 'Indefinidos incluye las conversiones de temporal a indefinido. Cuenta contratos, no personas.'
+        }, function (c) {
+          var t = serie(CT.m, c), i = serie(CT.indef, c);
+          return { type: 'stack', xType: 'mes', x: CT.x, yFormat: 'num',
+                   series: [{ name: 'Indefinidos', data: i },
+                            { name: 'Temporales', data: t.map(function (v, k) { return v == null ? null : v - (i[k] || 0); }) }] };
+        }),
+        conSelector({
           titulo: 'Contratos en el sector servicios', sub: 'Mes a mes · cada línea es un año',
-          chips: [MENSUAL], fuente: F_SEPE,
-          spec: { type: 'line', xType: 'cat', x: MESES, xTodas: true, xLabel: 'Mes', yFormat: 'num', series: porMesDelAnio(CT.x, cserv, 3) }
-        }
+          chips: [MENSUAL], fuente: F_SEPE
+        }, function (c) {
+          return { type: 'line', xType: 'cat', x: MESES, xTodas: true, xLabel: 'Mes', yFormat: 'num', series: porMesDelAnio(CT.x, serie(CT.serv, c), 3) };
+        })
       ];
 
       if (esTodo()) {
@@ -817,17 +959,19 @@
         var rH = ranking(noms, CODS.map(function (c) { return ult(AF.hos[c] || []); }));
         var rP = ranking(noms, CODS.map(function (c) { var v = hosPct(c); return v == null ? null : Math.round(v * 10) / 10; }));
         var rPar = ranking(noms, CODS.map(paroMil));
+        var faltan = CODS.filter(function (c) { return !ult(AF.hos[c] || []); }).map(function (c) { return NOM[c]; });
         cards.push({
-          titulo: 'Afiliaciones en hostelería por municipio', sub: Obs.periodo(ult(AF.x), 'trim'),
-          chips: [TRIMESTRAL], fuente: F_AFIL, alto: 'tall',
-          nota: 'Llocnou de la Corona no aparece: la fuente no da cifra (sin afiliados o secreto estadístico).',
-          spec: { type: 'barh', x: rH.x, xLabel: 'Municipio', yFormat: 'num', series: [{ name: 'Afiliaciones', data: rH.v }] }
+          titulo: 'Afiliados en hostelería por municipio', sub: mesAF,
+          chips: [MENSUAL], fuente: F_AFIL, alto: 'tall',
+          nota: faltan.length ? faltan.join(', ') + (faltan.length > 1 ? ' no aparecen' : ' no aparece') +
+            ': menos de 5 afiliados en hostelería, que la Seguridad Social oculta por secreto estadístico.' : null,
+          spec: { type: 'barh', x: rH.x, xLabel: 'Municipio', yFormat: 'num', series: [{ name: 'Afiliados', data: rH.v }] }
         });
         cards.push({
-          titulo: 'Dónde pesa más la hostelería', sub: 'Porcentaje de las afiliaciones del municipio, ' + Obs.periodo(ult(AF.x), 'trim'),
-          chips: [TRIMESTRAL], fuente: F_AFIL, alto: 'tall',
+          titulo: 'Dónde pesa más la hostelería', sub: 'Porcentaje de las afiliaciones del municipio, ' + mesAF,
+          chips: [MENSUAL], fuente: F_AFIL, alto: 'tall',
           nota: 'En un municipio pequeño basta una gran empresa de hostelería o de catering para disparar el porcentaje: ' +
-            'conviene leerlo junto con el número de afiliaciones.',
+            'conviene leerlo junto con el número de afiliados.',
           spec: { type: 'barh', x: rP.x, xLabel: 'Municipio', yFormat: pct1, series: [{ name: '% hostelería', data: rP.v }] }
         });
         cards.push({
@@ -839,19 +983,20 @@
       }
 
       return {
-        nota: esTodo() ? 'Las cifras de la comarca son la <b>suma de los 20 municipios</b>.' : null,
-        hero: { valor: ult(hos), label: 'Afiliaciones a la Seguridad Social en hostelería en ' + nombreAmbito() + ', ' + Obs.periodo(ult(AF.x), 'trim'),
+        nota: 'Las cifras de la comarca son la <b>suma de los 20 municipios</b>. El selector de cada gráfica cambia solo esa gráfica; ' +
+          'el de la cabecera cambia las cifras de arriba y el punto de partida de todas.',
+        hero: { valor: ult(hos), label: 'Afiliados a la Seguridad Social en hostelería en ' + nombreAmbito() + ', ' + mesAF,
           extra: [
             { label: 'Peso de la hostelería en el empleo', valor: ult(pct), formato: pct1 },
             { label: 'En la provincia de Valencia', valor: ult(pctProv), formato: pct1 },
-            { label: 'Afiliaciones en todos los sectores', valor: ult(tot) },
+            { label: 'Afiliados en todos los sectores', valor: ult(tot) },
             { label: 'Parados por cada 1.000 habitantes (' + Obs.periodo(ult(PA.x), 'mes') + ')', valor: ult(par) != null && pob ? ult(par) / pob * 1000 : null, formato: function (v) { return F.num(v, 1); } }
           ] },
         kpis: [
-          { label: 'Hostelería · ' + Obs.periodo(ult(AF.x), 'trim'), valor: ult(hos), delta: varTrim(hos), deltaRef: 'interanual', serie: hos },
-          { label: 'Afiliaciones totales · ' + Obs.periodo(ult(AF.x), 'trim'), valor: ult(tot), delta: varTrim(tot), deltaRef: 'interanual', serie: tot },
+          { label: 'Hostelería · ' + mesAF, valor: ult(hos), delta: varInt(hos), deltaRef: 'interanual', serie: hos.slice(-24) },
+          { label: 'Afiliados totales · ' + mesAF, valor: ult(tot), delta: varInt(tot), deltaRef: 'interanual', serie: tot.slice(-24) },
           { label: 'Paro registrado · ' + Obs.periodo(ult(PA.x), 'mes'), valor: ult(par), delta: varInt(par), deltaRef: 'interanual', invertir: true, serie: par.slice(-24) },
-          { label: 'Paro en servicios · ' + Obs.periodo(ult(PA.x), 'mes'), valor: ult(aT('serv')), delta: varInt(aT('serv')), deltaRef: 'interanual', invertir: true, serie: aT('serv').slice(-24) },
+          { label: 'Paro en servicios · ' + Obs.periodo(ult(PA.x), 'mes'), valor: ult(parServ), delta: varInt(parServ), deltaRef: 'interanual', invertir: true, serie: parServ.slice(-24) },
           { label: 'Contratos · 12 meses', valor: con12, delta: delta12(con), deltaRef: 'sobre los 12 anteriores', serie: con.slice(-36) },
           { label: 'Contratos indefinidos · 12 meses', valor: con12 ? ind12 / con12 * 100 : null, formato: pct1, serie: cociente(ind, con).slice(-24) }
         ],
@@ -935,6 +1080,14 @@
   });
 
   document.getElementById('hs-ambito').addEventListener('change', function () { ponerAmbito(this.value); });
+  /* El kit repinta la pestaña Empleo entera al cambiar de ámbito: se vuelven a
+     montar los botones de comparar cada vez que cambia su contenido. */
+  (function () {
+    var host = document.getElementById('sec-empleo');
+    if (!host) return;
+    new MutationObserver(function () { montarComparar(host); }).observe(host, { childList: true });
+    montarComparar(host);
+  })();
   document.querySelector('.obs-nav-in').addEventListener('click', function (ev) {
     var b = ev.target.closest('button[data-sec]');
     if (!b) return;

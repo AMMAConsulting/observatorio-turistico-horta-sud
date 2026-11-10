@@ -36,10 +36,12 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- data/data.js; then
+          # La cache de la Seguridad Social (un JSON pequeño por mes) también se
+          # guarda: así cada día solo se descargan los meses nuevos.
+          git add data/data.js pipeline/cache
+          if git diff --cached --quiet; then
             echo "Sin cambios en los datos."
             exit 0
           fi
-          git add data/data.js
           git commit -m "Datos actualizados $(date -u +%Y-%m-%d)"
           git push

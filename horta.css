@@ -1,0 +1,76 @@
+/* Estilos propios del Observatorio de l'Horta Sud: el mapa de coropletas, su
+   lista y la ficha de municipio. Todo con los tokens del kit (obs.css). */
+
+.hs-ambito { display: inline-flex; align-items: center; gap: 8px; }
+.hs-ambito .obs-select { min-width: 230px; font-weight: 600; }
+
+.hs-mapa-card { margin-top: 16px; }
+.hs-mapa-cuerpo { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 0; }
+.hs-mapa-izq { padding: 0 0 10px 17px; min-width: 0; }
+#hs-mapa { height: 560px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-sunk); z-index: 0; }
+.hs-mapa-der { padding: 0 17px 10px 14px; min-width: 0; }
+.hs-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 10px; font-size: 12px; color: var(--ink-2); }
+.hs-ley { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.hs-ley i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; flex: none; }
+
+.hs-lista { display: flex; flex-direction: column; gap: 1px; max-height: 596px; overflow-y: auto; }
+.hs-fila {
+  display: grid; grid-template-columns: 22px minmax(0, 1.2fr) minmax(40px, 1fr) auto; gap: 8px; align-items: center;
+  font: inherit; font-size: 12.5px; color: var(--ink); text-align: left;
+  background: none; border: 0; border-radius: 6px; padding: 5px 7px; cursor: pointer;
+}
+.hs-fila:hover { background: var(--surface-sunk); }
+.hs-fila.on { background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.hs-fila .p { color: var(--ink-mut); font-variant-numeric: tabular-nums; text-align: right; }
+.hs-fila .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.hs-fila .b { height: 8px; background: var(--surface-sunk); border-radius: 4px; overflow: hidden; }
+.hs-fila .b i { display: block; height: 100%; background: var(--brand); border-radius: 4px; }
+.hs-fila .v { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+
+.hs-rotulo span {
+  position: absolute; transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none;
+  font: 600 10.5px/1 var(--font, Montserrat, system-ui, sans-serif); color: #16210d;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 2px #fff;
+}
+:root[data-theme="dark"] .hs-rotulo span { color: #f1f7ea; text-shadow: 0 0 3px #0d131c, 0 0 3px #0d131c, 0 0 2px #0d131c; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hs-rotulo span { color: #f1f7ea; text-shadow: 0 0 3px #0d131c, 0 0 3px #0d131c, 0 0 2px #0d131c; }
+}
+.leaflet-container { font-family: inherit; background: var(--surface-sunk); }
+.leaflet-tooltip.hs-tip {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow); font-size: 12px; line-height: 1.45; border-radius: 6px;
+}
+.leaflet-tooltip.hs-tip::before { display: none; }
+
+.hs-ficha { margin-top: 16px; padding: 4px 17px 16px; }
+.hs-ficha-vacia { padding: 18px 0 6px; color: var(--ink-mut); font-size: 13px; }
+.hs-ficha-cab { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0 8px; }
+.hs-ficha-cab h3 { margin: 0; font-size: 18px; }
+.hs-ficha table.obs-table td:first-child { white-space: normal; }
+.hs-spark, .hs-hoteles { margin-top: 14px; font-size: 12.5px; color: var(--ink-2); }
+.hs-spark > span, .hs-hoteles > span { display: block; color: var(--ink-mut); font-size: 11.5px; font-weight: 600; margin-bottom: 4px; }
+.hs-spark svg { width: 320px; max-width: 100%; height: 48px; }
+.hs-hoteles em { color: var(--ink-mut); font-style: normal; }
+
+.hs-tabla-card { margin-top: 16px; }
+.hs-tabla-scroll { overflow-x: auto; padding: 0 17px 10px; }
+
+@media (max-width: 900px) {
+  .hs-mapa-cuerpo { grid-template-columns: minmax(0, 1fr); }
+  .hs-mapa-izq { padding: 0 17px 10px; }
+  #hs-mapa { height: 420px; }
+  .hs-lista { max-height: 320px; }
+}
+@media print { #hs-mapa { height: 420px; } .hs-lista { max-height: none; } }
+
+/* El selector de indicador tiene textos largos: en pantallas estrechas baja de
+   línea y se encoge en vez de empujar la página hacia un lado. */
+.hs-mapa-card .obs-card-head { flex-wrap: wrap; }
+.hs-mapa-card .obs-card-ctrl { max-width: 100%; min-width: 0; }
+#hs-metrica { max-width: 100%; min-width: 0; }
+@media (max-width: 600px) {
+  .hs-mapa-card .obs-card-ctrl { width: 100%; }
+  #hs-metrica { width: 100%; }
+  .hs-ambito .obs-select { min-width: 0; max-width: 100%; }
+}

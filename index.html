@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Observatorio Turístico de l'Horta Sud</title>
+<meta name="description" content="Turistas, alojamiento y ocupación de los 20 municipios de l'Horta Sud, con datos oficiales del INE, la Generalitat Valenciana y el SEPE que se actualizan solos.">
+
+<!-- Tipografía del kit. Si no carga, la pila de respaldo mantiene el diseño. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%234f7a28'/%3E%3Cpath d='M5 6v12h13' stroke='white' stroke-width='1.9' fill='none' stroke-linecap='round'/%3E%3Cpath d='m8 14 3-3 3 3 4-6' stroke='white' stroke-width='1.9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;650&display=swap" rel="stylesheet">
+
+<!-- Kit: no se toca por observatorio -->
+<link rel="stylesheet" href="assets/obs.css">
+
+<!-- Ajustes de marca de ESTE observatorio. Es el único sitio donde tocar color. -->
+<style>
+  :root { --brand: #4f7a28; --brand-ink: #3c611b; --brand-soft: #edf5e3; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --brand: #7fae4a; --brand-ink: #a6cf78; --brand-soft: #1c2a14; }
+  }
+  :root[data-theme="dark"] { --brand: #7fae4a; --brand-ink: #a6cf78; --brand-soft: #1c2a14; }
+</style>
+<!-- Mapa de coropletas: lo único propio de este observatorio -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="horta.css">
+</head>
+<body>
+
+<div id="obs-app"></div>
+
+<!-- Librería de gráficas -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<!-- Kit -->
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="assets/obs-charts.js"></script>
+<script src="assets/obs-ui.js"></script>
+<!-- Datos (los escribe pipeline/build_data.py) -->
+<script src="data/data.js"></script>
+<!-- Declaración de ESTE observatorio -->
+<script src="data/geo.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

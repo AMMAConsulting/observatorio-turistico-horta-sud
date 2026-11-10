@@ -1,0 +1,45 @@
+name: Actualizar datos
+
+# Cada día a las 05:40 UTC: el registro de turismo de la GVA cambia a diario y
+# el INE publica en fechas distintas cada mes. También se lanza a mano en Actions.
+on:
+  schedule:
+    - cron: "40 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar-datos
+  cancel-in-progress: false
+
+jobs:
+  recolectar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Recolectar
+        # Si el colector aborta (datos peores que los publicados) el paso falla
+        # y data.js se queda como estaba. Es el comportamiento que se quiere.
+        run: python pipeline/build_data.py
+
+      - name: Publicar si hay cambios
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- data/data.js; then
+            echo "Sin cambios en los datos."
+            exit 0
+          fi
+          git add data/data.js
+          git commit -m "Datos actualizados $(date -u +%Y-%m-%d)"
+          git push

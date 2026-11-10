@@ -149,43 +149,87 @@ def resumir_mes(xlsx_bytes, cods, prov):
     return {"mun": mun, "prov": p}
 
 
-def afiliacion_mensual(cods, prov, carpeta_cache, desde="2023-01"):
-    """Serie mensual por municipio. Lee la cache y descarga solo lo que falta."""
+def _sin_enlace(desde, hasta, primer_dic):
+    """Meses que la pagina ya no enlaza pero siguen en el servidor: todos los
+    meses desde `desde` y el diciembre de cada año desde `primer_dic`.
+    Comprobado en nov-2026: hay mensual desde ene-2022 y solo diciembres de
+    2012 a 2021. Diciembre de 2011 existe, pero en CNAE-93: no es comparable."""
+    out = []
+    a, m = int(desde[:4]), int(desde[5:])
+    while f"{a}-{m:02d}" <= hasta:
+        out.append(f"{a}-{m:02d}")
+        a, m = (a + 1, 1) if m == 12 else (a, m + 1)
+    out += [f"{y}-12" for y in range(int(primer_dic), int(desde[:4]))]
+    return sorted(set(out))
+
+
+def _bajar(mes):
+    """Descarga un mes sin enlace probando el nombre normal y el revisado."""
+    mm, aa = mes[5:], mes[2:4]
+    ultimo = None
+    for nombre in (f"MUNCNAE{mm}{aa}.xlsx", f"MUNCNAE{mm}{aa}R.xlsx"):
+        try:
+            return nombre, get(BASE + nombre, timeout=300, reintentos=1)
+        except Exception as e:                                    # noqa: BLE001
+            ultimo = e
+    raise ultimo
+
+
+def afiliacion_mensual(cods, prov, carpeta_cache, desde="2022-01", primer_dic="2012"):
+    """Serie mensual por municipio desde `desde` y serie anual (diciembre) desde
+    `primer_dic`. Lee la cache y descarga solo lo que falta."""
     os.makedirs(carpeta_cache, exist_ok=True)
-    publicados = {m: f for m, f in ficheros_publicados().items() if m >= desde}
+    publicados = ficheros_publicados()
     if not publicados:
         raise RuntimeError("la pagina de la Seguridad Social no lista ficheros MUNCNAE")
+    candidatos = sorted(set(m for m in publicados if m >= desde) |
+                        set(_sin_enlace(desde, max(publicados), primer_dic)))
     meses = {}
-    for mes in sorted(publicados):
+    for mes in candidatos:
         ruta = os.path.join(carpeta_cache, mes + ".json")
         previo = None
         if os.path.exists(ruta):
             with io.open(ruta, encoding="utf-8") as fh:
                 previo = json.load(fh)
-        if previo and previo.get("fichero") == publicados[mes]:
+        # Sin enlace en la pagina, lo que hay en la cache vale (no se revisa).
+        if previo and (mes not in publicados or previo.get("fichero") == publicados[mes]):
             meses[mes] = previo
             continue
         try:
-            r = resumir_mes(get(BASE + publicados[mes], timeout=300), cods, prov)
+            if mes in publicados:
+                nombre, crudo = publicados[mes], get(BASE + publicados[mes], timeout=300)
+            else:
+                nombre, crudo = _bajar(mes)
+            r = resumir_mes(crudo, cods, prov)
         except Exception as e:                                    # noqa: BLE001
-            aviso(f"{publicados[mes]}: {e}")
+            aviso(f"{mes}: {e}")
             if previo:
                 meses[mes] = previo
             continue
         if not r["mun"]:
-            aviso(f"{publicados[mes]}: sin filas de la comarca")
+            aviso(f"{nombre}: sin filas de la comarca")
             continue
-        r["fichero"] = publicados[mes]
+        r["fichero"] = nombre
         with io.open(ruta, "w", encoding="utf-8") as fh:
             json.dump(r, fh, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-        ok(f"{mes}: {publicados[mes]} descargado y resumido")
+        ok(f"{mes}: {nombre} descargado y resumido")
         meses[mes] = r
-    # Meses que ya no se listan (la pagina solo enseña unos años) siguen en la cache.
     for nombre in sorted(os.listdir(carpeta_cache)):
         mes = nombre[:-5]
-        if nombre.endswith(".json") and mes >= desde and mes not in meses:
+        if nombre.endswith(".json") and mes >= f"{primer_dic}-12" and mes not in meses:
             with io.open(os.path.join(carpeta_cache, nombre), encoding="utf-8") as fh:
                 meses[mes] = json.load(fh)
+
+    # Serie anual: diciembre de cada año (el mes de cierre que hay desde 2012).
+    dics = sorted(m for m in meses if m.endswith("-12"))
+    cods5 = [str(c).zfill(5) for c in cods]
+    anual = {
+        "x": [m[:4] for m in dics],
+        "total": {c: [(meses[m]["mun"].get(c) or {}).get("total") for m in dics] for c in cods5},
+        "hos": {c: [((meses[m]["mun"].get(c) or {}).get("sec") or {}).get("I") for m in dics] for c in cods5},
+        "prov": {"total": [meses[m]["prov"]["total"] for m in dics], "hos": [meses[m]["prov"]["hos"] for m in dics]},
+    }
+    meses = {m: v for m, v in meses.items() if m >= desde}
 
     xs = sorted(meses)
     letras = [s for s, _ in SECCIONES]
@@ -206,4 +250,5 @@ def afiliacion_mensual(cods, prov, carpeta_cache, desde="2023-01"):
         "sup": {c: de(c, lambda m: m["sup"]) for c in cods},
         "prov": {"total": [meses[x]["prov"]["total"] for x in xs], "hos": [meses[x]["prov"]["hos"] for x in xs]},
         "ficheros": {x: meses[x].get("fichero") for x in xs},
+        "anual": anual,
     }

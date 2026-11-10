@@ -18,7 +18,7 @@ publican de verdad a escala municipal, y el contexto provincial de lo que no:
          hoteles, viviendas de uso turistico, agencias, turismo activo, etc.
   SEPE - Paro registrado (por sector, sexo y edad) y contratos por municipios.
   SS   - Afiliados a la Seguridad Social el ultimo dia de cada mes por
-         municipio y division CNAE (seg-social.es, desde 2023): la Hosteleria
+         municipio y division CNAE (seg-social.es): mensual desde 2022 y diciembre de cada año desde 2012: la Hosteleria
          es el empleo turistico que baja a municipio. Mensual, con cache en
          pipeline/cache/afil_ss para no bajar 25 MB por mes cada dia.
 

@@ -15,7 +15,7 @@ No es una web oficial de la Mancomunitat.
 | Ocupación y pernoctaciones | INE, EOH y EOAP (2074, 2066, 2065, 2063, 2072) | **provincia de Valencia** | mensual |
 | Población | INE, padrón, tabla 2903 | municipio | anual |
 | Paro registrado y contratos | SEPE, datos abiertos | municipio | mensual |
-| Afiliados por sector (hostelería) | Seguridad Social, `MUNCNAEmmaa.xlsx` (CNAE 2D, último día del mes) | municipio | mensual, desde ene-2023 |
+| Afiliados por sector (hostelería) | Seguridad Social, `MUNCNAEmmaa.xlsx` (CNAE 2D, último día del mes) | municipio | mensual desde ene-2022; diciembre de cada año desde 2012 (los meses antiguos no están enlazados en la web, pero siguen en el servidor) |
 
 Los Excel de la Seguridad Social pesan ~25 MB cada uno (toda España): el
 colector resume cada mes en `pipeline/cache/afil_ss/AAAA-MM.json`, que va al

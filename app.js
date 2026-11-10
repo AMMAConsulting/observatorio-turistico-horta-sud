@@ -23,6 +23,7 @@
   var PA = D.paro || { x: [], m: {} };
   var CT = D.contratos || { x: [], m: {}, serv: {}, indef: {} };
   var AF = D.afilm || { x: [], letras: [], total: {}, hos: {}, sec: {}, prov: { total: [], hos: [] } };
+  var AN = AF.anual || { x: [], total: {}, hos: {}, prov: { total: [], hos: [] } };   /* diciembre de cada año */
   var PR = D.prov || { hot: { x: [] }, apt: { x: [] } };
 
   /* Ámbito activo: 'all' (los 20 municipios) o el código INE de uno. */
@@ -829,7 +830,7 @@
     document.querySelectorAll('.hs-cmp-btn').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
   });
   var CORTO = { A: 'Agricultura y pesca', B: 'Industrias extractivas', C: 'Industria manufacturera', D: 'Energía', E: 'Agua y residuos',
-    F: 'Construcción', G: 'Comercio', H: 'Transporte y almacenamiento', I: 'Hostelería', J: 'Información y comunicaciones',
+    F: 'Construcción', G: 'Comercio', H: 'Transporte', I: 'Hostelería', J: 'Información y comunicaciones',
     K: 'Finanzas y seguros', L: 'Inmobiliarias', M: 'Actividades profesionales', N: 'Servicios administrativos',
     O: 'Administración pública', P: 'Educación', Q: 'Sanidad y servicios sociales', R: 'Ocio, cultura y deporte',
     S: 'Otros servicios', T: 'Empleo doméstico', U: 'Organismos extraterritoriales' };
@@ -879,6 +880,28 @@
           return { type: 'bar', xType: 'mes', x: AF.x, yFormat: 'num', series: [{ name: 'Hostelería · ' + nombreDe(c), data: serie(AF.hos, c) }] };
         }, function (lista) {
           return { type: 'line', xType: 'mes', x: AF.x, yFormat: 'num', series: lineas(lista, function (c) { return serie(AF.hos, c); }) };
+        }),
+        conSelector({
+          titulo: 'Afiliados en hostelería desde ' + (AN.x[0] || ''), sub: 'Último día de diciembre de cada año',
+          chips: [ANUAL], fuente: F_AFIL,
+          nota: 'Antes de 2022 la Seguridad Social solo conserva el fichero de diciembre de cada año. En diciembre de 2020 ' +
+            'los trabajadores en ERTE seguían de alta: la caída real del empleo por la pandemia fue mayor de lo que se ve.'
+        }, function (c) {
+          return { type: 'bar', xType: 'anual', x: AN.x, xLabel: 'Año', yFormat: 'num', series: [{ name: 'Hostelería · ' + nombreDe(c), data: serie(AN.hos, c) }] };
+        }, function (lista) {
+          return { type: 'line', xType: 'anual', x: AN.x, xLabel: 'Año', yFormat: 'num', series: lineas(lista, function (c) { return serie(AN.hos, c); }) };
+        }),
+        conSelector({
+          titulo: 'Peso de la hostelería desde ' + (AN.x[0] || ''), sub: 'Porcentaje de las afiliaciones en diciembre de cada año',
+          chips: [ANUAL], fuente: F_AFIL
+        }, function (c) {
+          return { type: 'line', xType: 'anual', x: AN.x, xLabel: 'Año', yFormat: pct1, yTick: function (v) { return F.pct(v, v % 1 === 0 ? 0 : 1); },
+                   series: [{ name: nombreDe(c), data: cociente(serie(AN.hos, c), serie(AN.total, c)) },
+                            { name: 'Provincia de Valencia', data: cociente(AN.prov.hos, AN.prov.total) }] };
+        }, function (lista) {
+          return { type: 'line', xType: 'anual', x: AN.x, xLabel: 'Año', yFormat: pct1, yTick: function (v) { return F.pct(v, v % 1 === 0 ? 0 : 1); },
+                   series: lineas(lista, function (c) { return cociente(serie(AN.hos, c), serie(AN.total, c)); },
+                                  [{ name: 'Provincia de Valencia', data: cociente(AN.prov.hos, AN.prov.total) }]) };
         }),
         conSelector({
           titulo: 'Peso de la hostelería en el empleo', sub: 'Porcentaje de todas las afiliaciones, mes a mes',

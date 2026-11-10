@@ -62,7 +62,31 @@
   #hs-mapa { height: 420px; }
   .hs-lista { max-height: 320px; }
 }
-@media print { #hs-mapa { height: 420px; } .hs-lista { max-height: none; } }
+
+/* Modo impresión (lo activa app.js antes de imprimir): la página se compone al
+   ancho útil de un A4 vertical para que las gráficas se dibujen a esa medida. */
+@page { size: A4 portrait; margin: 12mm; }
+html.hs-print body { width: 700px; margin: 0 auto; background: #fff; }
+html.hs-print .obs-wrap { max-width: none; padding-left: 0; padding-right: 0; }
+html.hs-print .obs-nav, html.hs-print .obs-toolbar, html.hs-print .obs-card-tools,
+html.hs-print .obs-header-actions, html.hs-print .obs-card-ctrl, html.hs-print #hs-ver,
+html.hs-print .leaflet-control-zoom { display: none !important; }
+html.hs-print .obs-section[hidden] { display: block !important; }
+html.hs-print .obs-section { break-before: page; }
+html.hs-print .obs-section:first-of-type { break-before: auto; }
+html.hs-print .obs-grid { grid-template-columns: minmax(0, 1fr) !important; }
+html.hs-print .obs-card, html.hs-print .obs-kpi, html.hs-print .obs-hero { break-inside: avoid; box-shadow: none; }
+html.hs-print .obs-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+html.hs-print .hs-mapa-cuerpo { grid-template-columns: minmax(0, 1fr); }
+html.hs-print .hs-mapa-izq { padding: 0 17px 10px; }
+html.hs-print #hs-mapa { height: 430px; }
+html.hs-print .hs-lista { max-height: none; overflow: visible; display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+html.hs-print .hs-tabla-scroll { overflow: visible; }
+html.hs-print table.obs-table { font-size: 11px; }
+html.hs-print table.obs-table th, html.hs-print table.obs-table td { padding: 4px 6px; }
+html.hs-print .hs-ficha-vacia { display: none; }
+html.hs-print, html.hs-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
 
 /* El selector de indicador tiene textos largos: en pantallas estrechas baja de
    línea y se encoge en vez de empujar la página hacia un lado. */

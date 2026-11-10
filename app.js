@@ -792,6 +792,39 @@
     if (caducas[id]) { caducas[id] = false; Obs.refrescar(id); }
   });
 
+  /* ------------------------------------------------------------ Impresión
+     El armazón pinta cada pestaña la primera vez que se abre y dimensiona las
+     gráficas al ancho de pantalla. Si se imprime tal cual, las pestañas no
+     visitadas salen vacías y las gráficas se cortan por la derecha. Antes de
+     imprimir se pone la página al ancho del papel, se pintan todas las
+     pestañas y se redimensiona; al terminar se deja todo como estaba. */
+  function prepararImpresion() {
+    document.documentElement.classList.add('hs-print');
+    SECCIONES.forEach(function (s) {
+      var host = document.getElementById('sec-' + s.id);
+      if (host && (!host.children.length || caducas[s.id])) { caducas[s.id] = false; Obs.refrescar(s.id); }
+    });
+    Obs.resize();
+    if (mapa) { mapa.invalidateSize(); mapa.fitBounds(L.geoJSON(window.GEO).getBounds().pad(0.03)); }
+  }
+  function deshacerImpresion() {
+    document.documentElement.classList.remove('hs-print');
+    Obs.resize();
+    if (mapa) { mapa.invalidateSize(); mapa.fitBounds(L.geoJSON(window.GEO).getBounds().pad(0.03)); }
+  }
+  /* El botón: se intercepta antes que el armazón para dar tiempo a que las
+     gráficas y las teselas del mapa terminen de dibujarse. */
+  document.getElementById('obs-imprimir').addEventListener('click', function (ev) {
+    ev.stopImmediatePropagation();
+    prepararImpresion();
+    setTimeout(function () { window.print(); }, 900);
+  }, true);
+  /* Ctrl+P o el menú del navegador: sin margen de espera, pero mejor que nada. */
+  window.addEventListener('beforeprint', function () {
+    if (!document.documentElement.classList.contains('hs-print')) prepararImpresion();
+  });
+  window.addEventListener('afterprint', deshacerImpresion);
+
   Obs.estado('Turistas por municipio hasta ' + Obs.periodo(ult(I.x), 'mes') +
     ' · ocupación provincial hasta ' + Obs.periodo(ult(PR.hot.x), 'mes'), 'live');
 

@@ -21,6 +21,8 @@
   var O = D.otros || { tipos: [], m: {} };
   var P = D.pob || { x: [], m: {} };
   var PA = D.paro || { x: [], m: {} };
+  var CT = D.contratos || { x: [], m: {}, serv: {}, indef: {} };
+  var AF = D.afil || { x: [], secs: [], total: {}, hos: {}, ult: {}, media4: {}, prov: { total: [], hos: [] } };
   var PR = D.prov || { hot: { x: [] }, apt: { x: [] } };
 
   /* Ámbito activo: 'all' (los 20 municipios) o el código INE de uno. */
@@ -133,12 +135,32 @@
   var F_VUT = { txt: 'Generalitat Valenciana · Registro de Turismo (viviendas de uso turístico)', url: 'https://dadesobertes.gva.es/es/dataset/tur-gestur-vt' };
   var F_GVA = { txt: 'Generalitat Valenciana · Registro de Turismo', url: 'https://dadesobertes.gva.es/es/dataset?q=turismo' };
   var F_PAD = { txt: 'INE · Padrón municipal', url: 'https://www.ine.es/jaxiT3/Tabla.htm?t=2903' };
+  var F_AFIL = { txt: 'Generalitat Valenciana · Portal Estadístic, afiliaciones a la Seguridad Social por sección de actividad', url: 'https://dadesobertes.gva.es/es/dataset/estadistica-de-treballadors-afiliats-a-la-ss-per-seccio-dactivitat' };
   var F_SEPE = { txt: 'SEPE · datos abiertos por municipios', url: 'https://www.sepe.es/HomeSepe/que-es-el-sepe/estadisticas/datos-estadisticos/municipios.html' };
 
   var MENSUAL = { txt: 'Mensual', tipo: 'live' };
   var ANUAL = { txt: 'Anual' };
   var SEMESTRAL = { txt: 'Semestral', tipo: 'live' };
   var DIARIO = { txt: 'Registro vivo', tipo: 'live' };
+  var TRIMESTRAL = { txt: 'Trimestral', tipo: 'live' };
+
+  /* Afiliaciones: variación sobre el mismo trimestre del año anterior. */
+  var varTrim = function (a) {
+    if (!a || a.length < 5) return null;
+    var c = a[a.length - 1], p = a[a.length - 5];
+    return (c == null || !p) ? null : (c - p) / p * 100;
+  };
+  var cociente = function (a, b) {
+    return (a || []).map(function (v, i) { var d = (b || [])[i]; return v == null || !d ? null : v / d * 100; });
+  };
+  var hosPct = function (c) {
+    var h = ult(AF.hos[c] || []), t = ult(AF.total[c] || []);
+    return h == null || !t ? null : h / t * 100;
+  };
+  var paroMil = function (c) {
+    var p = ult(PA.m[c] || []), h = pobUlt(c);
+    return p == null || !h ? null : Math.round(p / h * 10000) / 10;
+  };
 
   var AVISO_SUMA = 'Las cifras de la comarca son la <b>suma de los 20 municipios</b>. El INE cuenta a cada turista en cada municipio donde pernocta, ' +
     'así que quien duerme en dos municipios de la comarca en el mismo mes suma dos veces.';
@@ -161,6 +183,12 @@
       val: function (c) { return ult(V.viv[c] || []); }, fuente: F_VTE },
     { id: 'pct', txt: 'Viviendas turísticas sobre el total de viviendas', sub: 'Porcentaje, ' + Obs.periodo(ult(V.x), 'mes'),
       val: function (c) { return ult(V.pct[c] || []); }, fmt: function (v) { return F.pct(v, 2); }, fuente: F_VTE },
+    { id: 'afh', txt: 'Afiliaciones en hostelería', sub: 'Seguridad Social, ' + Obs.periodo(ult(AF.x), 'trim'),
+      val: function (c) { return ult(AF.hos[c] || []); }, fuente: F_AFIL },
+    { id: 'afp', txt: 'Peso de la hostelería en el empleo', sub: 'Porcentaje de las afiliaciones, ' + Obs.periodo(ult(AF.x), 'trim'),
+      val: hosPct, fmt: function (v) { return F.pct(v, 1); }, fuente: F_AFIL },
+    { id: 'par', txt: 'Paro registrado por cada 1.000 habitantes', sub: Obs.periodo(ult(PA.x), 'mes') + ' sobre el padrón de ' + ult(P.x),
+      val: paroMil, fmt: function (v) { return F.num(v, 1); }, fuente: F_SEPE },
     { id: 'pob', txt: 'Población', sub: 'Padrón a 1 de enero de ' + ult(P.x),
       val: function (c) { return pobUlt(c); }, fuente: F_PAD }
   ];
@@ -705,26 +733,149 @@
     }
   };
 
-  /* ========================================================== 5. CONTEXTO */
+  /* ============================================================ 5. EMPLEO */
+
+  var secEmpleo = {
+    id: 'empleo', nombre: 'Empleo',
+    titulo: 'El empleo, municipio a municipio',
+    desc: 'Afiliaciones a la Seguridad Social por sector de actividad (trimestrales, Generalitat Valenciana) y paro y contratos registrados ' +
+      '(mensuales, SEPE). La hostelería es el empleo turístico más directo que se publica por municipio; no recoge todo el turismo ' +
+      '(agencias, transporte, ocio), pero tampoco todo él es turístico: incluye bares y restaurantes de uso diario.',
+    render: function () {
+      var hos = serie(AF.hos), tot = serie(AF.total);
+      var pct = cociente(hos, tot), pctProv = cociente(AF.prov.hos, AF.prov.total);
+      var sec = esTodo() ? sumarMun(AF.media4) : (AF.media4[ambito] || []);
+      var CORTO = { A: 'Agricultura y pesca', B: 'Industrias extractivas', C: 'Industria manufacturera', D: 'Energía', E: 'Agua y residuos',
+        F: 'Construcción', G: 'Comercio', H: 'Transporte y almacenamiento', I: 'Hostelería', J: 'Información y comunicaciones',
+        K: 'Finanzas y seguros', L: 'Inmobiliarias', M: 'Actividades profesionales', N: 'Servicios administrativos y auxiliares',
+        O: 'Administración pública', P: 'Educación', Q: 'Sanidad y servicios sociales', R: 'Ocio, cultura y deporte',
+        S: 'Otros servicios', T: 'Empleo doméstico', U: 'Organismos extraterritoriales' };
+      var rSec = ranking(AF.secs.map(function (n, i) { return CORTO[AF.letra[i]] || n; }), sec);
+      var par = serie(PA.m), con = serie(CT.m), ind = serie(CT.indef), cserv = serie(CT.serv);
+      var tmp = con.map(function (v, i) { return v == null ? null : v - (ind[i] || 0); });
+      var con12 = ult12(con), ind12 = ult12(ind);
+      var pob = esTodo() ? suma(CODS.map(pobUlt)) : pobUlt(ambito);
+      var aT = function (k) { return serie(PA[k] || {}); };
+      var pct1 = function (v) { return F.pct(v, 1); };
+
+      var cards = [
+        {
+          titulo: 'Afiliaciones en hostelería', sub: nombreAmbito() + ' · trimestral',
+          chips: [TRIMESTRAL], fuente: F_AFIL, ancho: 'full',
+          nota: 'Cuenta afiliaciones (puestos), no personas: quien tiene dos empleos cuenta dos veces. ' +
+            'Si un municipio no tiene afiliados en un sector, o el dato está protegido por secreto estadístico, la fuente no da cifra.',
+          spec: { type: 'bar', xType: 'trim', x: AF.x, yFormat: 'num', series: [{ name: 'Afiliaciones en hostelería', data: hos }] }
+        },
+        {
+          titulo: 'Peso de la hostelería en el empleo', sub: 'Porcentaje de todas las afiliaciones',
+          chips: [TRIMESTRAL], fuente: F_AFIL,
+          spec: { type: 'line', xType: 'trim', x: AF.x, yFormat: pct1, yTick: function (v) { return F.pct(v, v % 1 === 0 ? 0 : 1); },
+                  series: [{ name: nombreAmbito(), data: pct }, { name: 'Provincia de Valencia', data: pctProv }] }
+        },
+        {
+          titulo: 'Empleo por sector', sub: 'Afiliaciones, media de los cuatro últimos trimestres',
+          chips: [TRIMESTRAL], fuente: F_AFIL, alto: 'tall',
+          spec: { type: 'barh', x: rSec.x, xLabel: 'Sección de actividad', yFormat: 'num', series: [{ name: 'Afiliaciones', data: rSec.v }] }
+        },
+        {
+          titulo: 'Afiliaciones totales', sub: nombreAmbito() + ' · todos los sectores',
+          chips: [TRIMESTRAL], fuente: F_AFIL,
+          spec: { type: 'line', xType: 'trim', x: AF.x, yFormat: 'num', series: [{ name: 'Afiliaciones', data: tot }] }
+        },
+        {
+          titulo: 'Paro registrado por sector', sub: nombreAmbito() + ' · demandantes inscritos a fin de mes',
+          chips: [MENSUAL], fuente: F_SEPE, ancho: 'full',
+          nota: 'El paro registrado cuenta demandantes inscritos en las oficinas de empleo: no es la tasa de paro de la EPA. ' +
+            'El SEPE no separa la hostelería dentro de los servicios.',
+          spec: { type: 'stack', xType: 'mes', x: PA.x, yFormat: 'num',
+                  series: [{ name: 'Servicios', data: aT('serv') }, { name: 'Industria', data: aT('ind') },
+                           { name: 'Construcción', data: aT('cons') }, { name: 'Agricultura', data: aT('agri') },
+                           { name: 'Sin empleo anterior', data: aT('sin') }] }
+        },
+        {
+          titulo: 'Quién está en paro', sub: 'Demandantes inscritos a fin de mes',
+          chips: [MENSUAL], fuente: F_SEPE,
+          spec: { type: 'line', xType: 'mes', x: PA.x, yFormat: 'num',
+                  series: [{ name: 'Mujeres', data: aT('muj') }, { name: '45 años o más', data: aT('may45') }, { name: 'Menores de 25 años', data: aT('jov') }] }
+        },
+        {
+          titulo: 'Contratos registrados', sub: 'Según duración · contratos firmados en el mes',
+          chips: [MENSUAL], fuente: F_SEPE,
+          nota: 'Indefinidos incluye las conversiones de temporal a indefinido. Cuenta contratos, no personas.',
+          spec: { type: 'stack', xType: 'mes', x: CT.x, yFormat: 'num',
+                  series: [{ name: 'Indefinidos', data: ind }, { name: 'Temporales', data: tmp }] }
+        },
+        {
+          titulo: 'Contratos en el sector servicios', sub: 'Mes a mes · cada línea es un año',
+          chips: [MENSUAL], fuente: F_SEPE,
+          spec: { type: 'line', xType: 'cat', x: MESES, xTodas: true, xLabel: 'Mes', yFormat: 'num', series: porMesDelAnio(CT.x, cserv, 3) }
+        }
+      ];
+
+      if (esTodo()) {
+        var noms = CODS.map(function (c) { return NOM[c]; });
+        var rH = ranking(noms, CODS.map(function (c) { return ult(AF.hos[c] || []); }));
+        var rP = ranking(noms, CODS.map(function (c) { var v = hosPct(c); return v == null ? null : Math.round(v * 10) / 10; }));
+        var rPar = ranking(noms, CODS.map(paroMil));
+        cards.push({
+          titulo: 'Afiliaciones en hostelería por municipio', sub: Obs.periodo(ult(AF.x), 'trim'),
+          chips: [TRIMESTRAL], fuente: F_AFIL, alto: 'tall',
+          nota: 'Llocnou de la Corona no aparece: la fuente no da cifra (sin afiliados o secreto estadístico).',
+          spec: { type: 'barh', x: rH.x, xLabel: 'Municipio', yFormat: 'num', series: [{ name: 'Afiliaciones', data: rH.v }] }
+        });
+        cards.push({
+          titulo: 'Dónde pesa más la hostelería', sub: 'Porcentaje de las afiliaciones del municipio, ' + Obs.periodo(ult(AF.x), 'trim'),
+          chips: [TRIMESTRAL], fuente: F_AFIL, alto: 'tall',
+          nota: 'En un municipio pequeño basta una gran empresa de hostelería o de catering para disparar el porcentaje: ' +
+            'conviene leerlo junto con el número de afiliaciones.',
+          spec: { type: 'barh', x: rP.x, xLabel: 'Municipio', yFormat: pct1, series: [{ name: '% hostelería', data: rP.v }] }
+        });
+        cards.push({
+          titulo: 'Paro registrado por cada 1.000 habitantes', sub: Obs.periodo(ult(PA.x), 'mes') + ' · sobre el padrón de ' + ult(P.x),
+          chips: [MENSUAL], fuente: F_SEPE, alto: 'tall', ancho: 'full',
+          nota: 'Se divide por toda la población, no solo por la de edad de trabajar: sirve para comparar municipios entre sí.',
+          spec: { type: 'barh', x: rPar.x, xLabel: 'Municipio', yFormat: function (v) { return F.num(v, 1); }, series: [{ name: 'Parados por 1.000 hab.', data: rPar.v }] }
+        });
+      }
+
+      return {
+        nota: esTodo() ? 'Las cifras de la comarca son la <b>suma de los 20 municipios</b>.' : null,
+        hero: { valor: ult(hos), label: 'Afiliaciones a la Seguridad Social en hostelería en ' + nombreAmbito() + ', ' + Obs.periodo(ult(AF.x), 'trim'),
+          extra: [
+            { label: 'Peso de la hostelería en el empleo', valor: ult(pct), formato: pct1 },
+            { label: 'En la provincia de Valencia', valor: ult(pctProv), formato: pct1 },
+            { label: 'Afiliaciones en todos los sectores', valor: ult(tot) },
+            { label: 'Parados por cada 1.000 habitantes (' + Obs.periodo(ult(PA.x), 'mes') + ')', valor: ult(par) != null && pob ? ult(par) / pob * 1000 : null, formato: function (v) { return F.num(v, 1); } }
+          ] },
+        kpis: [
+          { label: 'Hostelería · ' + Obs.periodo(ult(AF.x), 'trim'), valor: ult(hos), delta: varTrim(hos), deltaRef: 'interanual', serie: hos },
+          { label: 'Afiliaciones totales · ' + Obs.periodo(ult(AF.x), 'trim'), valor: ult(tot), delta: varTrim(tot), deltaRef: 'interanual', serie: tot },
+          { label: 'Paro registrado · ' + Obs.periodo(ult(PA.x), 'mes'), valor: ult(par), delta: varInt(par), deltaRef: 'interanual', invertir: true, serie: par.slice(-24) },
+          { label: 'Paro en servicios · ' + Obs.periodo(ult(PA.x), 'mes'), valor: ult(aT('serv')), delta: varInt(aT('serv')), deltaRef: 'interanual', invertir: true, serie: aT('serv').slice(-24) },
+          { label: 'Contratos · 12 meses', valor: con12, delta: delta12(con), deltaRef: 'sobre los 12 anteriores', serie: con.slice(-36) },
+          { label: 'Contratos indefinidos · 12 meses', valor: con12 ? ind12 / con12 * 100 : null, formato: pct1, serie: cociente(ind, con).slice(-24) }
+        ],
+        cards: cards.filter(function (c) {
+          return (c.spec.series || []).some(function (s) { return hayDatos(s.data); });
+        })
+      };
+    }
+  };
+
+  /* ========================================================== 6. CONTEXTO */
 
   var secContexto = {
     id: 'contexto', nombre: 'Territorio',
     titulo: 'El territorio que recibe',
-    desc: 'Población y paro registrado, para poner las cifras turísticas en proporción. El paro registrado del SEPE cuenta demandantes inscritos: ' +
-      'no es la tasa de paro de la EPA y no se compara con ella.',
+    desc: 'Población, para poner las cifras turísticas en proporción. El empleo tiene su propia pestaña.',
     render: function () {
-      var pob = serie(P.m), par = serie(PA.m);
+      var pob = serie(P.m);
       var p0 = P.x.indexOf('2000');
       var cards = [
         {
           titulo: 'Población', sub: nombreAmbito() + ' · padrón a 1 de enero',
           chips: [ANUAL], fuente: F_PAD,
           spec: { type: 'line', xType: 'anual', x: P.x.slice(p0), xLabel: 'Año', yFormat: 'num', series: [{ name: 'Habitantes', data: pob.slice(p0) }] }
-        },
-        {
-          titulo: 'Paro registrado', sub: nombreAmbito() + ' · demandantes inscritos a fin de mes',
-          chips: [MENSUAL], fuente: F_SEPE,
-          spec: { type: 'line', xType: 'mes', x: PA.x, yFormat: 'num', series: [{ name: 'Paro registrado', data: par }] }
         }
       ];
       if (esTodo()) {
@@ -745,8 +896,7 @@
       }
       return {
         kpis: [
-          { label: 'Habitantes (' + ult(P.x) + ')', valor: ult(pob), delta: pob.length > 1 ? (ult(pob) - pob[pob.length - 2]) / pob[pob.length - 2] * 100 : null, deltaRef: 'sobre el año anterior', serie: pob.slice(-15) },
-          { label: 'Paro registrado · ' + Obs.periodo(ult(PA.x), 'mes'), valor: ult(par), delta: varInt(par), deltaRef: 'interanual', invertir: true, serie: par.slice(-24) }
+          { label: 'Habitantes (' + ult(P.x) + ')', valor: ult(pob), delta: pob.length > 1 ? (ult(pob) - pob[pob.length - 2]) / pob[pob.length - 2] * 100 : null, deltaRef: 'sobre el año anterior', serie: pob.slice(-15) }
         ],
         cards: cards
       };
@@ -755,7 +905,7 @@
 
   /* ============================================================= Arranque */
 
-  var SECCIONES = [secMapa, secVisitantes, secAlojamiento, secOcupacion, secContexto];
+  var SECCIONES = [secMapa, secVisitantes, secAlojamiento, secOcupacion, secEmpleo, secContexto];
   var caducas = {};
 
   function ponerAmbito(c) {
@@ -776,7 +926,7 @@
       '<option value="all">Toda la comarca (20 municipios)</option>' +
       MUN.map(function (m) { return '<option value="' + m.c + '">' + Obs.esc(m.n) + '</option>'; }).join('') +
       '</select></label>',
-    fuentes: [F_INT, F_VTE, F_EOH, F_EOAP, F_GVA, F_PAD, F_SEPE],
+    fuentes: [F_INT, F_VTE, F_EOH, F_EOAP, F_GVA, F_AFIL, F_PAD, F_SEPE],
     metodologia: 'Un proceso automático consulta cada día las API públicas del INE, del portal de datos abiertos de la Generalitat Valenciana y del SEPE, ' +
       'y regenera el fichero de datos. Cada gráfica enlaza a su fuente y permite ver la tabla y descargarla en CSV. ' +
       'Los turistas por municipio proceden de una estadística experimental del INE basada en la posición de los teléfonos móviles.',
@@ -826,6 +976,7 @@
   window.addEventListener('afterprint', deshacerImpresion);
 
   Obs.estado('Turistas por municipio hasta ' + Obs.periodo(ult(I.x), 'mes') +
-    ' · ocupación provincial hasta ' + Obs.periodo(ult(PR.hot.x), 'mes'), 'live');
+    ' · ocupación provincial hasta ' + Obs.periodo(ult(PR.hot.x), 'mes') +
+    ' · empleo hasta ' + Obs.periodo(ult(PA.x), 'mes'), 'live');
 
 })();

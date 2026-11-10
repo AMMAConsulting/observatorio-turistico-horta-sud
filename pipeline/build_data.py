@@ -16,7 +16,10 @@ publican de verdad a escala municipal, y el contexto provincial de lo que no:
          ningun municipio de l'Horta Sud: por eso es contexto, no dato local.
   GVA  - Registro de Turismo de la Comunitat Valenciana (dadesobertes.gva.es):
          hoteles, viviendas de uso turistico, agencias, turismo activo, etc.
-  SEPE - Paro registrado por municipios.
+  SEPE - Paro registrado (por sector, sexo y edad) y contratos por municipios.
+  GVA  - Afiliaciones a la Seguridad Social por municipio y seccion de
+         actividad, trimestral (Portal Estadistic, bdo.gva.es): la Hosteleria
+         es el empleo turistico que baja a municipio.
 
 Reglas del kit: solo GET; un fallo de una fuente no tumba el panel; nunca se
 publica un data.js peor que el vigente (umbral del 90 %).
@@ -363,26 +366,139 @@ def otros_registros(fallos):
 
 # ------------------------------------------------------------------ SEPE
 
-def paro():
+def _norm(s):
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+def sepe_municipal(fichero, columnas):
+    """Lee los CSV anuales del SEPE de los ultimos 6 años y devuelve
+    {"x": meses, "<clave>": {cod: [...]}} para cada clave de `columnas`.
+
+    `columnas` = {clave: [trozos de cabecera]}: la columna se localiza por el
+    texto de la cabecera, no por la posicion (el SEPE las ha movido otras veces),
+    y si una clave lista varias cabeceras se suman (p. ej. indefinidos de
+    hombres + de mujeres)."""
     hoy = datetime.date.today().year
-    por = {c: {} for c in CODS}
+    por = {k: {c: {} for c in CODS} for k in columnas}
     for a in range(hoy - 5, hoy + 1):
         try:
-            filas = sepe._csv(sepe.BASE + sepe.PARO.format(a=a))
+            filas = sepe._csv(sepe.BASE + fichero.format(a=a))
         except Exception as e:                                    # noqa: BLE001
-            aviso(f"SEPE {a}: {e}")
+            aviso(f"SEPE {fichero.format(a=a)}: {e}")
             continue
+        cab = next((f for f in filas[:5] if any(_norm(x) == "codigo municipio" for x in f)), None)
+        if not cab:
+            aviso(f"SEPE {a}: sin cabecera reconocible")
+            continue
+        cabn = [_norm(x) for x in cab]
+        idx = {}
+        for k, trozos in columnas.items():
+            ii = [i for i, h in enumerate(cabn) if any(_norm(t) == h for t in trozos)]
+            if len(ii) != len(trozos):
+                aviso(f"SEPE {a}: columna '{k}' no encontrada")
+                continue
+            idx[k] = ii
         for f in filas:
-            if len(f) <= sepe.COL_TOTAL:
+            if len(f) < len(cab):
                 continue
             c = f[sepe.COL_MUN_COD].strip().zfill(5)
             t = sepe._periodo(f[sepe.COL_PERIODO])
-            if c in por and t:
-                v = num(f[sepe.COL_TOTAL])
-                if v is not None:
-                    por[c][t] = v
-    xs, m = alinear(por)
-    return {"x": xs, "m": m}
+            if c not in CODS or not t:
+                continue
+            for k, ii in idx.items():
+                vs = [num(f[i]) for i in ii]
+                if all(v is not None for v in vs):
+                    por[k][c][t] = sum(vs)
+    xs = sorted({t for d in por.values() for m in d.values() for t in m})
+    out = {"x": xs}
+    for k, d in por.items():
+        out[k] = {c: [d[c].get(t) for t in xs] for c in CODS}
+    return out
+
+
+def paro():
+    r = sepe_municipal(sepe.PARO, {
+        "m": ["total Paro Registrado"],
+        "serv": ["Paro Servicios"],
+        "agri": ["Paro Agricultura"], "ind": ["Paro Industria"],
+        "cons": ["Paro Construcción"], "sin": ["Paro Sin empleo Anterior"],
+        "muj": ["Paro mujer edad < 25", "Paro mujer edad 25 -45", "Paro mujer edad >=45"],
+        "jov": ["Paro hombre edad < 25", "Paro mujer edad < 25"],
+        "may45": ["Paro hombre edad >=45", "Paro mujer edad >=45"],
+    })
+    return r
+
+
+def contratos():
+    return sepe_municipal(sepe.CONTRATOS, {
+        "m": ["Total Contratos"],
+        "serv": ["Contratos Servicios"],
+        "indef": ["Contratos iniciales indefinidos hombres", "Contratos convertidos en indefinidos hombres",
+                  "Contratos iniciales indefinidos mujeres", "Contratos convertidos en indefinidos mujeres"],
+    })
+
+
+# ---------------------------------------------- GVA - afiliacion por sector
+
+AFIL_URL = ("https://bdo.gva.es/bdo/res_optimo_static.php?cons=V0012_C1D0009"
+            "&idioma=cas&form=csvcoma&nperiodo=20")
+
+
+def afiliacion():
+    """Afiliaciones a la Seguridad Social por municipio y seccion de actividad
+    (CNAE), trimestral, ultimos 5 años. Portal Estadistic de la GVA. La seccion
+    I es la Hosteleria: el empleo turistico mas directo que baja a municipio."""
+    import csv
+    import io
+    from sources.comun import get
+    raw = get(AFIL_URL)
+    try:
+        txt = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        txt = raw.decode("cp1252", errors="replace")
+    filas = list(csv.reader(io.StringIO(txt)))
+    ordinal = {"1": "1", "2": "2", "3": "3", "4": "4"}
+
+    def trim(s):
+        m = re.match(r"(\d{4})\s*-\s*(\d)", s.strip())
+        return f"{m.group(1)}T{ordinal[m.group(2)]}" if m else None
+
+    secs, datos = [], {}           # datos[(ambito, seccion)][trimestre] = valor
+    for f in filas[1:]:
+        if len(f) < 4:
+            continue
+        t = trim(f[0])
+        if not t:
+            continue
+        amb = f[1].strip()
+        cod = amb[:5] if amb[:5].isdigit() else ("prov" if amb == "Provincia de Valencia" else None)
+        if cod is None or (cod != "prov" and cod not in CODS):
+            continue
+        sec = f[2].strip()
+        if sec != "Total" and sec not in secs:
+            secs.append(sec)
+        v = num(f[3])           # '-' = sin afiliados o secreto estadistico
+        datos.setdefault((cod, sec), {})[t] = v
+
+    xs = sorted({t for d in datos.values() for t in d}, key=lambda s: (s[:4], s[-1]))
+    secs.sort()
+    serie_de = lambda cod, sec: [datos.get((cod, sec), {}).get(t) for t in xs]   # noqa: E731
+    hos = next(s for s in secs if s.startswith("I."))
+    corto = lambda s: re.sub(r"^[A-U]\.\s*", "", s).split(";")[0].strip()        # noqa: E731
+    return {
+        "x": xs,
+        "secs": [corto(s) for s in secs],
+        "letra": [s[0] for s in secs],
+        "total": {c: serie_de(c, "Total") for c in CODS},
+        "hos": {c: serie_de(c, hos) for c in CODS},
+        # Ultimo trimestre por seccion: para el reparto sectorial de cada municipio.
+        "ult": {c: [datos.get((c, s), {}).get(xs[-1]) for s in secs] for c in CODS},
+        # Media de los cuatro ultimos trimestres por seccion (quita la estacionalidad).
+        "media4": {c: [(lambda vs: round(sum(vs) / len(vs)) if vs else None)(
+            [v for v in [datos.get((c, s), {}).get(t) for t in xs[-4:]] if v is not None]) for s in secs]
+            for c in CODS},
+        "prov": {"total": serie_de("prov", "Total"), "hos": serie_de("prov", hos)},
+    }
 
 
 # ------------------------------------------------------------ Recoleccion
@@ -440,6 +556,13 @@ def recoger():
     r = intenta("paro", "SEPE - paro registrado", paro, lambda r: r["x"])
     if r:
         ok(f"{len(r['x'])} meses, ultimo {r['x'][-1]}")
+    r = intenta("contratos", "SEPE - contratos registrados", contratos, lambda r: r["x"])
+    if r:
+        ok(f"{len(r['x'])} meses, ultimo {r['x'][-1]}")
+    r = intenta("afil", "GVA - afiliacion a la Seguridad Social por sector",
+                afiliacion, lambda r: r["x"] and any(any(v for v in s) for s in r["hos"].values()))
+    if r:
+        ok(f"{len(r['x'])} trimestres, ultimo {r['x'][-1]}")
 
     datos["meta"]["fallos"] = fallos
     return datos, fallos
